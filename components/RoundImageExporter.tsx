@@ -71,7 +71,7 @@ export function RoundImageExporter({ round, roundData, participants }: RoundImag
                 .map(a => participants.find(p => p.id === a.participant_id))
                 .filter(Boolean) as Participant[]
 
-              const tableLanguage = tableParticipants.length > 0 ? tableParticipants[0].language : ''
+              const tableLanguage = roundData.tableLanguages?.[label] || (tableParticipants.length > 0 ? tableParticipants[0].language : '')
               
               return (
                 <Card key={label} className="border shadow-md rounded-3xl overflow-hidden">

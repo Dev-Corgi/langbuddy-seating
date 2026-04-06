@@ -6,6 +6,53 @@ interface PreviousRoundData {
   assignments: Assignment[]
 }
 
+function getRecommendedTableCountForLanguage(count: number): number {
+  if (count <= 0) return 0
+  if (count <= 4) return 1
+  if (count === 5 || count === 6) return 1
+  if (count === 7) return 2
+  return Math.floor(count / 4)
+}
+
+function buildCapacitiesForLanguage(count: number, tableCount?: number): number[] {
+  if (count <= 0) return []
+
+  let t = tableCount
+  if (!t || t <= 0) {
+    t = getRecommendedTableCountForLanguage(count)
+  }
+  if (t <= 0) t = 1
+
+  if (count <= 4 && t === 1) {
+    return [count]
+  }
+
+  if ((count === 5 || count === 6) && t === 1) {
+    return [count]
+  }
+
+  if (count === 7 && t === 2) {
+    return [4, 3]
+  }
+
+  if (t > count) {
+    t = count
+  }
+
+  const base = Math.floor(count / t)
+  const capacities = new Array(t).fill(base)
+  let remaining = count - base * t
+  let idx = 0
+
+  while (remaining > 0) {
+    capacities[idx % t] += 1
+    remaining -= 1
+    idx += 1
+  }
+
+  return capacities
+}
+
 export function arrangeRound(
   roundNumber: number,
   participants: Participant[],
@@ -16,6 +63,7 @@ export function arrangeRound(
   const languages = Object.keys(languageGroups).sort()
   
   const newRoundAssignments: Assignment[] = []
+  const tableLanguages: Record<string, string> = {}
   let totalTableIdx = 0
   
   // 이전 라운드들에서 만난 쌍 추적
@@ -34,47 +82,42 @@ export function arrangeRound(
   
   languages.forEach(lang => {
     const members = languageGroups[lang]
-    const koreans = members.filter(p => p.nationality === '한국인')
-    const foreigners = members.filter(p => p.nationality === '외국인')
-    
-    const langTableCount = langTableCounts[lang] || Math.ceil(members.length / 5)
-    const langTableLabels = Array.from({ length: langTableCount }, (_, i) => 
+    if (!members || members.length === 0) {
+      return
+    }
+
+    const capacities = buildCapacitiesForLanguage(members.length, langTableCounts[lang])
+    const langTableCount = capacities.length
+    const langTableLabels = Array.from({ length: langTableCount }, (_, i) =>
       String.fromCharCode(65 + totalTableIdx + i)
     )
-    
+
+    langTableLabels.forEach(label => {
+      tableLanguages[label] = lang
+    })
+
     totalTableIdx += langTableCount
 
     let bestAssignments: Assignment[] = []
     let minPenalty = Infinity
 
-    // 🔧 개선 1: 결정론적 사전 필터링 - 2번 이상 만난 쌍을 피하도록 초기 배치
-    const avoidPairs = new Set<string>()
-    seenPairs.forEach((count, pair) => {
-      if (count >= 2) avoidPairs.add(pair)
-    })
-
-    // 🔧 개선 2: 시도 횟수 50 → 200회로 증가
     for (let attempt = 0; attempt < 200; attempt++) {
       const currentAssignments: Assignment[] = []
-      
-      const shuffledK = _.shuffle([...koreans])
-      const shuffledF = _.shuffle([...foreigners])
-      
-      shuffledK.forEach((p, idx) => {
-        currentAssignments.push({ 
-          participant_id: p.id, 
-          table_label: langTableLabels[idx % langTableCount] 
-        })
-      })
-      
-      shuffledF.forEach((p, idx) => {
-        currentAssignments.push({ 
-          participant_id: p.id, 
-          table_label: langTableLabels[idx % langTableCount] 
-        })
+      const shuffledMembers = _.shuffle([...members])
+      let memberIdx = 0
+
+      capacities.forEach((cap, idx) => {
+        const label = langTableLabels[idx]
+        for (let k = 0; k < cap && memberIdx < shuffledMembers.length; k++) {
+          const p = shuffledMembers[memberIdx]
+          currentAssignments.push({
+            participant_id: p.id,
+            table_label: label,
+          })
+          memberIdx += 1
+        }
       })
 
-      // 🔧 개선 3: 페널티 가중치 강화 (3번 만남에 극도로 높은 페널티)
       let penalty = 0
       const tableGroups = _.groupBy(currentAssignments, 'table_label')
       Object.values(tableGroups).forEach(group => {
@@ -83,8 +126,6 @@ export function arrangeRound(
             const pair = [group[i].participant_id, group[j].participant_id].sort().join('-')
             const previousMeetings = seenPairs.get(pair) || 0
             if (previousMeetings > 0) {
-              // 기존: penalty += previousMeetings
-              // 개선: 2번 만남 = 10점, 3번 만남 = 1000점 (사실상 불가능하게)
               if (previousMeetings === 1) {
                 penalty += 10
               } else if (previousMeetings === 2) {
@@ -101,14 +142,13 @@ export function arrangeRound(
         minPenalty = penalty
         bestAssignments = currentAssignments
       }
-      // 완벽한 배치를 찾으면 즉시 종료
       if (penalty === 0) break
     }
 
     newRoundAssignments.push(...bestAssignments)
   })
 
-  return { round: roundNumber, assignments: newRoundAssignments }
+  return { round: roundNumber, assignments: newRoundAssignments, tableLanguages }
 }
 
 // 기존 함수 유지 (호환성)
@@ -128,7 +168,7 @@ export function calculateAutoTableCounts(participants: Participant[]): Record<st
   const counts: Record<string, number> = {}
   
   Object.entries(languageGroups).forEach(([lang, members]) => {
-    counts[lang] = Math.ceil(members.length / 5)
+    counts[lang] = getRecommendedTableCountForLanguage(members.length)
   })
   
   return counts

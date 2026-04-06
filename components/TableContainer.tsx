@@ -1,6 +1,7 @@
 'use client'
 
-import { useSortable, SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { useDroppable } from '@dnd-kit/core'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ParticipantCard } from './ParticipantCard'
 import { Participant } from '@/types'
@@ -10,10 +11,11 @@ interface TableContainerProps {
   label: string
   participants: Participant[]
   round: number
+  tableLanguage?: string
 }
 
-export function TableContainer({ label, participants, round }: TableContainerProps) {
-  const { setNodeRef } = useSortable({
+export function TableContainer({ label, participants, round, tableLanguage }: TableContainerProps) {
+  const { setNodeRef } = useDroppable({
     id: `table-${label}-${round}`,
     data: {
       type: 'container',
@@ -23,7 +25,6 @@ export function TableContainer({ label, participants, round }: TableContainerPro
   })
 
   const warnings = getTableWarnings(participants)
-  const tableLanguage = participants.length > 0 ? participants[0].language : ''
 
   return (
     <Card className="border-none shadow-md bg-muted/20 rounded-[24px] overflow-hidden flex flex-col h-full">

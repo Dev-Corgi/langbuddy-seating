@@ -1,6 +1,7 @@
 'use client'
 
-import { useSortable, SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { useDroppable } from '@dnd-kit/core'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ParticipantCard } from './ParticipantCard'
 import { UserPlus } from 'lucide-react'
@@ -12,7 +13,7 @@ interface UnassignedListProps {
 }
 
 export function UnassignedList({ participants, round }: UnassignedListProps) {
-  const { setNodeRef } = useSortable({
+  const { setNodeRef } = useDroppable({
     id: `unassigned-${round}`,
     data: {
       type: 'container',

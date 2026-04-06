@@ -5,7 +5,6 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "build:single": "next build && node build-single-html.js",
     "start": "next start",
     "lint": "next lint"
   },

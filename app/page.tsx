@@ -34,7 +34,6 @@ import _ from 'lodash'
 import { Participant, RoundData } from '@/types'
 import { arrangeRound, runAutoArrange, calculateAutoTableCounts } from '@/lib/seating-algorithm'
 import { saveSession } from '@/lib/storage'
-import { CSVUploader } from '@/components/CSVUploader'
 import { ParticipantCard } from '@/components/ParticipantCard'
 import { TableContainer } from '@/components/TableContainer'
 import { UnassignedList } from '@/components/UnassignedList'
@@ -46,14 +45,16 @@ import { generateDebugLog, formatDebugLog } from '@/lib/debug-logger'
 export default function SeatingPage() {
   const [participants, setParticipants] = useState<Participant[]>([])
   const [rounds, setRounds] = useState<RoundData[]>([
-    { round: 1, assignments: [] },
-    { round: 2, assignments: [] },
-    { round: 3, assignments: [] }
+    { round: 1, assignments: [], tableLanguages: {} },
+    { round: 2, assignments: [], tableLanguages: {} },
+    { round: 3, assignments: [], tableLanguages: {} }
   ])
   const [currentRound, setCurrentRound] = useState(1)
   const [activeId, setActiveId] = useState<string | null>(null)
   const [langTableCounts, setLangTableCounts] = useState<Record<string, number>>({})
   const [isConfigOpen, setIsConfigOpen] = useState(false)
+  const [configRound, setConfigRound] = useState<number | null>(null)
+  const [configCounts, setConfigCounts] = useState<Record<string, number>>({})
   // 🔍 디버깅 로그 (임시 기능 - 나중에 삭제)
   const [debugLogs, setDebugLogs] = useState<string[]>([])
   const [showDebugLogs, setShowDebugLogs] = useState(false)
@@ -65,72 +66,81 @@ export default function SeatingPage() {
     })
   )
 
-  const handleDataLoaded = useCallback((loadedParticipants: Participant[]) => {
-    setParticipants(loadedParticipants)
-    const counts = calculateAutoTableCounts(loadedParticipants)
-    setLangTableCounts(counts)
-    toast.success('참가자 데이터를 불러왔습니다.')
-  }, [])
-
-  const handleArrangeRound = useCallback((roundNumber: number) => {
+  const openConfigForRound = useCallback((roundNumber: number) => {
     if (participants.length === 0) {
       toast.error('참가자가 없습니다.')
       return
     }
 
-    // 이전 라운드들 가져오기
-    const previousRounds = rounds.filter(r => r.round < roundNumber && r.assignments.length > 0)
-    
-    // 해당 라운드 배치
-    const newRoundData = arrangeRound(roundNumber, participants, langTableCounts, previousRounds)
-    
-    // 라운드 업데이트
-    const updatedRounds = [...rounds]
-    const idx = updatedRounds.findIndex(r => r.round === roundNumber)
-    if (idx !== -1) {
-      updatedRounds[idx] = newRoundData
+    const englishCount = participants.filter(p => p.language === '영어').length
+    const japaneseCount = participants.filter(p => p.language === '일본어').length
+
+    const autoCounts = calculateAutoTableCounts(participants)
+    const nextCounts: Record<string, number> = {
+      ...autoCounts,
+      영어: englishCount > 0 ? autoCounts['영어'] || Math.ceil(englishCount / 5) : 0,
+      일본어: japaneseCount > 0 ? autoCounts['일본어'] || Math.ceil(japaneseCount / 5) : 0,
     }
+
+    setConfigRound(roundNumber)
+    setConfigCounts(nextCounts)
+    setIsConfigOpen(true)
+  }, [participants])
+
+  const handleConfirmConfig = useCallback(() => {
+    if (configRound === null) return
+
+    const counts = { ...configCounts }
+    setLangTableCounts(counts)
+
+    const previousRounds = rounds.filter(r => r.round < configRound && r.assignments.length > 0)
+    const newRoundData = arrangeRound(configRound, participants, counts, previousRounds)
+
+    const updatedRounds = rounds.map(r =>
+      r.round === configRound ? newRoundData : r
+    )
+
     setRounds(updatedRounds)
-    
-    // 🔍 디버깅 로그 생성 (임시 기능)
-    const debugLog = generateDebugLog(roundNumber, newRoundData, updatedRounds, participants)
+
+    const debugLog = generateDebugLog(configRound, newRoundData, updatedRounds, participants)
     const formattedLog = formatDebugLog(debugLog)
     console.log(formattedLog)
-    setDebugLogs(prev => [...prev, formattedLog])
-    
-    toast.success(`${roundNumber}라운드 배치가 완료되었습니다.`)
-    setCurrentRound(roundNumber)
-  }, [participants, langTableCounts, rounds])
+    setDebugLogs(prevLogs => [...prevLogs, formattedLog])
+
+    toast.success(`${configRound}라운드 배치가 완료되었습니다.`)
+    setCurrentRound(configRound)
+    setIsConfigOpen(false)
+    setConfigRound(null)
+  }, [configRound, configCounts, participants, rounds])
 
   const handleAddLatecomer = useCallback((newParticipant: Participant) => {
     setParticipants(prev => [...prev, newParticipant])
     
-    // 현재 라운드에 배치
     const currentRoundData = rounds.find(r => r.round === currentRound)
     if (!currentRoundData || currentRoundData.assignments.length === 0) {
       toast.info(`${newParticipant.name}님이 추가되었습니다. 현재 라운드를 먼저 배치해주세요.`)
       return
     }
     
-    // 같은 언어 그룹의 테이블 찾기
-    const languageTables = currentRoundData.assignments.filter(a => {
-      const p = participants.find(p => p.id === a.participant_id)
-      return p?.language === newParticipant.language
-    })
+    // 지각자의 언어와 일치하는 테이블 중 인원이 가장 적은 곳 찾기
+    const tableAssignments = currentRoundData.assignments
+    const assignmentsByTable = _.groupBy(tableAssignments, 'table_label')
+    const tableLanguages = currentRoundData.tableLanguages || {}
+
+    const matchingTables = Object.keys(tableLanguages).filter(label => tableLanguages[label] === newParticipant.language)
     
-    if (languageTables.length === 0) {
+    if (matchingTables.length === 0) {
       toast.warning(`${newParticipant.name}님이 추가되었습니다. 현재 라운드에 ${newParticipant.language} 테이블이 없어 미배정 상태입니다.`)
       return
     }
     
-    // 같은 언어 테이블 중 인원이 가장 적은 테이블 찾기
-    const tableGroups = _.groupBy(languageTables, 'table_label')
-    let minTable = Object.keys(tableGroups)[0]
-    let minCount = tableGroups[minTable].length
+    let minTable = matchingTables[0]
+    let minCount = (assignmentsByTable[minTable] || []).length
     
-    Object.entries(tableGroups).forEach(([label, members]) => {
-      if (members.length < minCount) {
-        minCount = members.length
+    matchingTables.forEach(label => {
+      const count = (assignmentsByTable[label] || []).length
+      if (count < minCount) {
+        minCount = count
         minTable = label
       }
     })
@@ -170,33 +180,68 @@ export default function SeatingPage() {
     if (activeId === overId) return
 
     const isOverTable = over.data?.current?.type === 'container'
+    const activeParticipant = participants.find(p => p.id === activeId)
     
-    setRounds(prev => {
-      const newRounds = [...prev]
-      const roundIdx = newRounds.findIndex(r => r.round === currentRound)
-      const currentAssignments = [...(newRounds[roundIdx].assignments || [])]
+    if (isOverTable && over.data.current) {
+      const newTableLabel = over.data.current.tableLabel
       
-      const activeIdx = currentAssignments.findIndex(a => a.participant_id === activeId)
-      
-      if (isOverTable && over.data.current) {
-        const newTableLabel = over.data.current.tableLabel
-        
-        if (newTableLabel === 'unassigned') {
+      if (newTableLabel === 'unassigned') {
+        setRounds(prev => {
+          const newRounds = [...prev]
+          const roundIdx = newRounds.findIndex(r => r.round === currentRound)
+          const currentAssignments = [...(newRounds[roundIdx].assignments || [])]
+          const activeIdx = currentAssignments.findIndex(a => a.participant_id === activeId)
           if (activeIdx !== -1) {
             currentAssignments.splice(activeIdx, 1)
           }
-        } else {
+          newRounds[roundIdx] = { ...newRounds[roundIdx], assignments: currentAssignments }
+          return newRounds
+        })
+      } else {
+        const currentRoundData = rounds.find(r => r.round === currentRound)
+        const tableLang = currentRoundData?.tableLanguages?.[newTableLabel]
+        
+        if (tableLang && activeParticipant && tableLang !== activeParticipant.language) {
+          toast.error(`언어가 다릅니다: ${activeParticipant.language} 참가자는 ${tableLang} 테이블에 앉을 수 없습니다.`, {
+            id: 'lang-mismatch'
+          })
+          return
+        }
+
+        setRounds(prev => {
+          const newRounds = [...prev]
+          const roundIdx = newRounds.findIndex(r => r.round === currentRound)
+          const currentAssignments = [...(newRounds[roundIdx].assignments || [])]
+          const activeIdx = currentAssignments.findIndex(a => a.participant_id === activeId)
+          
           if (activeIdx !== -1) {
             currentAssignments[activeIdx] = { ...currentAssignments[activeIdx], table_label: newTableLabel }
           } else {
             currentAssignments.push({ participant_id: activeId, table_label: newTableLabel })
           }
-        }
-      } else {
+          newRounds[roundIdx] = { ...newRounds[roundIdx], assignments: currentAssignments }
+          return newRounds
+        })
+      }
+    } else {
+      setRounds(prev => {
+        const newRounds = [...prev]
+        const roundIdx = newRounds.findIndex(r => r.round === currentRound)
+        const currentAssignments = [...(newRounds[roundIdx].assignments || [])]
+        const activeIdx = currentAssignments.findIndex(a => a.participant_id === activeId)
         const overParticipantIdx = currentAssignments.findIndex(a => a.participant_id === overId)
         
         if (overParticipantIdx !== -1) {
           const newTableLabel = currentAssignments[overParticipantIdx].table_label
+          const currentRoundData = newRounds[roundIdx]
+          const tableLang = currentRoundData.tableLanguages?.[newTableLabel]
+          if (tableLang && activeParticipant && tableLang !== activeParticipant.language) {
+            toast.error(`언어가 다릅니다: ${activeParticipant.language} 참가자는 ${tableLang} 테이블에 앉을 수 없습니다.`, {
+              id: 'lang-mismatch'
+            })
+            return prev
+          }
+
           if (activeIdx !== -1) {
             currentAssignments[activeIdx] = { ...currentAssignments[activeIdx], table_label: newTableLabel }
           } else {
@@ -208,41 +253,25 @@ export default function SeatingPage() {
             currentAssignments.splice(activeIdx, 1)
           }
         }
-      }
-
-      newRounds[roundIdx] = { ...newRounds[roundIdx], assignments: currentAssignments }
-      return newRounds
-    })
+        newRounds[roundIdx] = { ...newRounds[roundIdx], assignments: currentAssignments }
+        return newRounds
+      })
+    }
   }
 
   const onDragEnd = (event: DragEndEvent) => {
     setActiveId(null)
   }
 
-  const currentRoundAssignments = rounds.find(r => r.round === currentRound)?.assignments || []
-  const tableLabels = Array.from(new Set(currentRoundAssignments.map(a => a.table_label))).sort()
+  const currentRoundData = rounds.find(r => r.round === currentRound)
+  const currentRoundAssignments = currentRoundData?.assignments || []
+  const tableLabels = currentRoundData
+    ? Object.keys(currentRoundData.tableLanguages || {}).sort()
+    : []
   const activeParticipant = participants.find(p => p.id === activeId)
   const unassignedParticipants = participants.filter(p => !currentRoundAssignments.some(a => a.participant_id === p.id))
 
   const languageGroups = useMemo(() => _.groupBy(participants, 'language'), [participants])
-
-  if (participants.length === 0) {
-    return (
-      <div className="p-4 md:p-8 bg-muted/30 min-h-screen">
-        <header className="mb-8">
-          <div className="flex items-center gap-3 mb-2">
-            <LayoutGrid className="w-8 h-8 text-primary" />
-            <h1 className="text-2xl md:text-3xl font-black tracking-tight">자리배치 프로그램</h1>
-          </div>
-          <p className="text-muted-foreground font-medium">언어교환 자리배치 자동화 도구</p>
-        </header>
-
-        <div className="max-w-2xl mx-auto">
-          <CSVUploader onDataLoaded={handleDataLoaded} />
-        </div>
-      </div>
-    )
-  }
 
   return (
     <div className="p-4 md:p-8 bg-muted/30 min-h-screen space-y-8 pb-32">
@@ -258,15 +287,7 @@ export default function SeatingPage() {
         <div className="flex flex-col gap-2">
           <div className="flex flex-wrap gap-2">
             <Button 
-              variant="outline" 
-              onClick={() => setIsConfigOpen(!isConfigOpen)}
-              className={cn("rounded-xl font-bold gap-2", isConfigOpen && "bg-muted")}
-            >
-              <Settings className="w-4 h-4" />
-              테이블 설정
-            </Button>
-            <Button 
-              onClick={() => handleArrangeRound(1)} 
+              onClick={() => openConfigForRound(1)} 
               className="rounded-xl font-black gap-2"
               variant={rounds[0].assignments.length > 0 ? "outline" : "default"}
               disabled={rounds[0].assignments.length > 0}
@@ -274,7 +295,7 @@ export default function SeatingPage() {
               {rounds[0].assignments.length > 0 ? "1라운드 완료" : "1라운드 배치"}
             </Button>
             <Button 
-              onClick={() => handleArrangeRound(2)} 
+              onClick={() => openConfigForRound(2)} 
               className="rounded-xl font-black gap-2"
               variant={rounds[1].assignments.length > 0 ? "outline" : "default"}
               disabled={rounds[0].assignments.length === 0 || rounds[1].assignments.length > 0}
@@ -282,7 +303,7 @@ export default function SeatingPage() {
               {rounds[1].assignments.length > 0 ? "2라운드 완료" : "2라운드 배치"}
             </Button>
             <Button 
-              onClick={() => handleArrangeRound(3)} 
+              onClick={() => openConfigForRound(3)} 
               className="rounded-xl font-black gap-2"
               variant={rounds[2].assignments.length > 0 ? "outline" : "default"}
               disabled={rounds[1].assignments.length === 0 || rounds[2].assignments.length > 0}
@@ -342,40 +363,104 @@ export default function SeatingPage() {
         </Card>
       )}
 
-      {isConfigOpen && (
-        <Card className="border-none shadow-lg rounded-[32px] overflow-hidden bg-card animate-in slide-in-from-top-4 duration-300">
-          <CardHeader className="pb-4">
-            <CardTitle className="text-lg font-black flex items-center gap-2">
-              <Settings className="w-5 h-5 text-primary" />
-              언어별 테이블 수 설정
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
-              {Object.entries(languageGroups).sort().map(([lang, members]) => (
-                <div key={lang} className="space-y-2 p-4 rounded-2xl bg-muted/50 border border-border">
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="text-xs font-black text-foreground uppercase tracking-tight">{lang}</span>
-                    <span className="text-[10px] font-bold text-muted-foreground">{members.length}명</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Input 
-                      type="number" 
-                      min="1"
-                      value={langTableCounts[lang] || Math.ceil(members.length / 5)} 
-                      onChange={(e) => setLangTableCounts(prev => ({ 
-                        ...prev, 
-                        [lang]: parseInt(e.target.value) || 1 
-                      }))}
-                      className="h-9 rounded-xl text-center font-black text-primary focus:ring-primary"
-                    />
-                    <span className="text-xs font-bold text-muted-foreground whitespace-nowrap">테이블</span>
-                  </div>
+      {isConfigOpen && configRound !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div
+            className="absolute inset-0"
+            onClick={() => {
+              setIsConfigOpen(false)
+              setConfigRound(null)
+            }}
+          />
+          <div className="relative w-full max-w-xl mx-4" onClick={(e) => e.stopPropagation()}>
+            <Card className="border-none shadow-2xl rounded-[32px] overflow-hidden bg-card">
+              <CardHeader className="pb-4">
+                <CardTitle className="text-lg font-black flex items-center gap-2">
+                  <Settings className="w-5 h-5 text-primary" />
+                  {configRound}라운드 테이블 설정
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {(['영어', '일본어'] as const).map(lang => {
+                  const count = participants.filter(p => p.language === lang).length
+                  if (count === 0) return null
+                  const tableCount = configCounts[lang] || 1
+                  const perTable = (count / tableCount).toFixed(1)
+                  return (
+                    <div key={lang} className="flex flex-col gap-2 p-4 rounded-2xl bg-muted/50 border border-border">
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs font-black text-foreground uppercase tracking-tight">{lang}</span>
+                        <span className="text-[10px] font-bold text-muted-foreground">{count}명</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            className="h-8 w-8 rounded-full"
+                            onClick={() => setConfigCounts(prev => ({
+                              ...prev,
+                              [lang]: Math.max(1, tableCount - 1),
+                            }))}
+                          >
+                            -
+                          </Button>
+                          <Input 
+                            type="number" 
+                            min="1"
+                            value={tableCount}
+                            onChange={(e) => {
+                              const value = parseInt(e.target.value) || 1
+                              setConfigCounts(prev => ({ 
+                                ...prev, 
+                                [lang]: Math.max(1, value),
+                              }))
+                            }}
+                            className="h-9 w-16 rounded-xl text-center font-black text-primary focus:ring-primary"
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            className="h-8 w-8 rounded-full"
+                            onClick={() => setConfigCounts(prev => ({
+                              ...prev,
+                              [lang]: tableCount + 1,
+                            }))}
+                          >
+                            +
+                          </Button>
+                        </div>
+                        <span className="text-xs font-bold text-muted-foreground whitespace-nowrap">
+                          예상 테이블당 인원수: {perTable}명
+                        </span>
+                      </div>
+                    </div>
+                  )
+                })}
+                <div className="flex justify-end gap-2">
+                  <Button
+                    variant="outline"
+                    className="rounded-xl font-bold"
+                    onClick={() => {
+                      setIsConfigOpen(false)
+                      setConfigRound(null)
+                    }}
+                  >
+                    취소
+                  </Button>
+                  <Button
+                    className="rounded-xl font-black"
+                    onClick={handleConfirmConfig}
+                  >
+                    설정 완료
+                  </Button>
                 </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
       )}
 
       <DndContext
@@ -387,6 +472,8 @@ export default function SeatingPage() {
       >
         <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-8">
           <aside className="space-y-6">
+            <LatecomerAdder onAddParticipant={handleAddLatecomer} />
+
             <Card className="border-none shadow-lg rounded-[32px] overflow-hidden bg-card">
               <CardHeader className="pb-4">
                 <CardTitle className="text-lg font-black flex items-center gap-2">
@@ -419,8 +506,6 @@ export default function SeatingPage() {
                 </div>
               </CardContent>
             </Card>
-
-            <LatecomerAdder onAddParticipant={handleAddLatecomer} />
 
             <UnassignedList 
               participants={unassignedParticipants} 
@@ -459,6 +544,7 @@ export default function SeatingPage() {
                           label={label} 
                           participants={tableParticipants}
                           round={r}
+                          tableLanguage={currentRoundData?.tableLanguages?.[label]}
                         />
                       )
                     })}

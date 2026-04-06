@@ -80,9 +80,10 @@ export function generateDebugLog(
       .map(a => participants.find(p => p.id === a.participant_id))
       .filter(Boolean) as Participant[]
     
+    const language = currentRound.tableLanguages?.[label] || tableParticipants[0]?.language || ''
     return {
       label,
-      language: tableParticipants[0]?.language || '',
+      language,
       size: tableParticipants.length,
       participants: tableParticipants.map(p => 
         `${p.name} (${p.nationality === '외국인' ? 'F' : 'K'}, ${p.gender})`

@@ -14,6 +14,7 @@ export type Assignment = {
 export type RoundData = {
   round: number
   assignments: Assignment[]
+  tableLanguages: Record<string, string>
 }
 
 export type SeatingConfig = {
