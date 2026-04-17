@@ -39,6 +39,7 @@ import { TableContainer } from '@/components/TableContainer'
 import { UnassignedList } from '@/components/UnassignedList'
 import { LatecomerAdder } from '@/components/LatecomerAdder'
 import { RoundImageExporter } from '@/components/RoundImageExporter'
+import { ParticipantEditor } from '@/components/ParticipantEditor'
 // 🔍 디버깅 로그 (임시 기능 - 나중에 삭제)
 import { generateDebugLog, formatDebugLog } from '@/lib/debug-logger'
 
@@ -55,6 +56,7 @@ export default function SeatingPage() {
   const [isConfigOpen, setIsConfigOpen] = useState(false)
   const [configRound, setConfigRound] = useState<number | null>(null)
   const [configCounts, setConfigCounts] = useState<Record<string, number>>({})
+  const [editingParticipant, setEditingParticipant] = useState<Participant | null>(null)
   // 🔍 디버깅 로그 (임시 기능 - 나중에 삭제)
   const [debugLogs, setDebugLogs] = useState<string[]>([])
   const [showDebugLogs, setShowDebugLogs] = useState(false)
@@ -165,6 +167,105 @@ export default function SeatingPage() {
       duration: 5000
     })
   }, [rounds, currentRound, participants])
+
+  const handleUpdateParticipant = useCallback((updated: Participant) => {
+    const oldParticipant = participants.find(p => p.id === updated.id)
+    if (!oldParticipant) return
+
+    // 참가자 정보 업데이트
+    setParticipants(prev =>
+      prev.map(p => p.id === updated.id ? updated : p)
+    )
+
+    // 언어가 변경된 경우 현재 라운드 자동 재배정
+    if (oldParticipant.language !== updated.language) {
+      const currentRoundData = rounds.find(r => r.round === currentRound)
+      if (currentRoundData && currentRoundData.assignments.length > 0) {
+        const currentAssignment = currentRoundData.assignments.find(
+          a => a.participant_id === updated.id
+        )
+
+        if (currentAssignment) {
+          const tableLanguages = currentRoundData.tableLanguages || {}
+          const currentTableLang = tableLanguages[currentAssignment.table_label]
+
+          // 현재 테이블 언어와 새 언어가 다르면 재배정
+          if (currentTableLang !== updated.language) {
+            const assignmentsByTable = _.groupBy(currentRoundData.assignments, 'table_label')
+
+            // 새 언어와 일치하는 테이블 찾기
+            const matchingTables = Object.keys(tableLanguages).filter(
+              label => tableLanguages[label] === updated.language
+            )
+
+            if (matchingTables.length > 0) {
+              // 인원이 가장 적은 테이블 찾기
+              let minTable = matchingTables[0]
+              let minCount = (assignmentsByTable[minTable] || []).length
+
+              matchingTables.forEach(label => {
+                const count = (assignmentsByTable[label] || []).length
+                if (count < minCount) {
+                  minCount = count
+                  minTable = label
+                }
+              })
+
+              // 재배정
+              setRounds(prev => {
+                const updatedRounds = [...prev]
+                const roundIdx = updatedRounds.findIndex(r => r.round === currentRound)
+                if (roundIdx !== -1) {
+                  updatedRounds[roundIdx] = {
+                    ...updatedRounds[roundIdx],
+                    assignments: updatedRounds[roundIdx].assignments.map(a =>
+                      a.participant_id === updated.id
+                        ? { ...a, table_label: minTable }
+                        : a
+                    )
+                  }
+                }
+                return updatedRounds
+              })
+
+              toast.success(
+                `${updated.name}님의 언어가 ${updated.language}로 변경되어 ${minTable}테이블로 재배정되었습니다.`,
+                { duration: 5000 }
+              )
+            } else {
+              // 일치하는 테이블이 없으면 미배정으로
+              setRounds(prev => {
+                const updatedRounds = [...prev]
+                const roundIdx = updatedRounds.findIndex(r => r.round === currentRound)
+                if (roundIdx !== -1) {
+                  updatedRounds[roundIdx] = {
+                    ...updatedRounds[roundIdx],
+                    assignments: updatedRounds[roundIdx].assignments.filter(
+                      a => a.participant_id !== updated.id
+                    )
+                  }
+                }
+                return updatedRounds
+              })
+
+              toast.warning(
+                `${updated.name}님의 언어가 ${updated.language}로 변경되었으나, 현재 라운드에 해당 언어 테이블이 없어 미배정 상태입니다.`,
+                { duration: 5000 }
+              )
+            }
+          } else {
+            toast.success(`${updated.name}님의 정보가 수정되었습니다.`)
+          }
+        } else {
+          toast.success(`${updated.name}님의 정보가 수정되었습니다.`)
+        }
+      } else {
+        toast.success(`${updated.name}님의 정보가 수정되었습니다.`)
+      }
+    } else {
+      toast.success(`${updated.name}님의 정보가 수정되었습니다.`)
+    }
+  }, [participants, rounds, currentRound])
 
   const onDragStart = (event: DragStartEvent) => {
     setActiveId(event.active.id as string)
@@ -510,6 +611,7 @@ export default function SeatingPage() {
             <UnassignedList 
               participants={unassignedParticipants} 
               round={currentRound}
+              onEdit={setEditingParticipant}
             />
           </aside>
 
@@ -545,6 +647,7 @@ export default function SeatingPage() {
                           participants={tableParticipants}
                           round={r}
                           tableLanguage={currentRoundData?.tableLanguages?.[label]}
+                          onEdit={setEditingParticipant}
                         />
                       )
                     })}
@@ -572,10 +675,19 @@ export default function SeatingPage() {
           }),
         }}>
           {activeId && activeParticipant ? (
-            <ParticipantCard participant={activeParticipant} isOverlay />
+            <ParticipantCard participant={activeParticipant} isOverlay onEdit={setEditingParticipant} />
           ) : null}
         </DragOverlay>
       </DndContext>
+
+      {editingParticipant && (
+        <ParticipantEditor
+          participant={editingParticipant}
+          isOpen={true}
+          onClose={() => setEditingParticipant(null)}
+          onSave={handleUpdateParticipant}
+        />
+      )}
     </div>
   )
 }

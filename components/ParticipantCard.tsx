@@ -2,16 +2,18 @@
 
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { GripVertical } from 'lucide-react'
+import { GripVertical, Settings } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Participant } from '@/types'
+import { Button } from '@/components/ui/button'
 
 interface ParticipantCardProps {
   participant: Participant
   isOverlay?: boolean
+  onEdit?: (participant: Participant) => void
 }
 
-export function ParticipantCard({ participant, isOverlay = false }: ParticipantCardProps) {
+export function ParticipantCard({ participant, isOverlay = false, onEdit }: ParticipantCardProps) {
   const {
     attributes,
     listeners,
@@ -61,6 +63,19 @@ export function ParticipantCard({ participant, isOverlay = false }: ParticipantC
           </div>
         </div>
       </div>
+      {onEdit && !isOverlay && (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6 rounded-md opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-1"
+          onClick={(e) => {
+            e.stopPropagation()
+            onEdit(participant)
+          }}
+        >
+          <Settings className="w-3.5 h-3.5 text-muted-foreground" />
+        </Button>
+      )}
     </div>
   )
 }

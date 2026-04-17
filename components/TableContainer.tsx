@@ -12,9 +12,10 @@ interface TableContainerProps {
   participants: Participant[]
   round: number
   tableLanguage?: string
+  onEdit?: (participant: Participant) => void
 }
 
-export function TableContainer({ label, participants, round, tableLanguage }: TableContainerProps) {
+export function TableContainer({ label, participants, round, tableLanguage, onEdit }: TableContainerProps) {
   const { setNodeRef } = useDroppable({
     id: `table-${label}-${round}`,
     data: {
@@ -58,7 +59,7 @@ export function TableContainer({ label, participants, round, tableLanguage }: Ta
         >
           <div className="grid grid-cols-2 gap-2">
             {participants.map(p => (
-              <ParticipantCard key={p.id} participant={p} />
+              <ParticipantCard key={p.id} participant={p} onEdit={onEdit} />
             ))}
           </div>
         </SortableContext>

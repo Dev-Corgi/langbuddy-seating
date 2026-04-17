@@ -10,9 +10,10 @@ import { Participant } from '@/types'
 interface UnassignedListProps {
   participants: Participant[]
   round: number
+  onEdit?: (participant: Participant) => void
 }
 
-export function UnassignedList({ participants, round }: UnassignedListProps) {
+export function UnassignedList({ participants, round, onEdit }: UnassignedListProps) {
   const { setNodeRef } = useDroppable({
     id: `unassigned-${round}`,
     data: {
@@ -36,7 +37,7 @@ export function UnassignedList({ participants, round }: UnassignedListProps) {
           strategy={verticalListSortingStrategy}
         >
           {participants.map(p => (
-            <ParticipantCard key={p.id} participant={p} />
+            <ParticipantCard key={p.id} participant={p} onEdit={onEdit} />
           ))}
         </SortableContext>
         {participants.length === 0 && (
