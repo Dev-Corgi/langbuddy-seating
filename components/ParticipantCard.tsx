@@ -33,13 +33,15 @@ export function ParticipantCard({ participant, isOverlay = false, onEdit }: Part
     <div
       ref={setNodeRef}
       style={style}
+      {...attributes}
+      {...listeners}
       className={cn(
-        "flex items-center justify-between p-3 mb-2 rounded-xl border bg-card shadow-sm group",
+        "flex items-center justify-between p-3 mb-2 rounded-xl border bg-card shadow-sm group cursor-grab active:cursor-grabbing",
         isOverlay ? "shadow-xl border-primary" : "border-border"
       )}
     >
       <div className="flex items-center gap-3 overflow-hidden flex-1">
-        <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing p-1 hover:bg-muted rounded text-muted-foreground">
+        <div className="p-1 text-muted-foreground">
           <GripVertical className="w-4 h-4" />
         </div>
         <div className="min-w-0 flex-1">

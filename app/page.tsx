@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -60,6 +60,13 @@ export default function SeatingPage() {
   // 🔍 디버깅 로그 (임시 기능 - 나중에 삭제)
   const [debugLogs, setDebugLogs] = useState<string[]>([])
   const [showDebugLogs, setShowDebugLogs] = useState(false)
+  
+  // 드래그 중인 drop 대상 정보 저장용 ref
+  const pendingDropRef = useRef<{ activeId: string | null; overId: string | null; isOverTable: boolean; tableLabel?: string }>({ 
+    activeId: null, 
+    overId: null, 
+    isOverTable: false 
+  })
   
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -273,95 +280,125 @@ export default function SeatingPage() {
 
   const onDragOver = (event: DragOverEvent) => {
     const { active, over } = event
-    if (!over) return
-
-    const activeId = active.id as string
-    const overId = over.id as string
-
-    if (activeId === overId) return
-
-    const isOverTable = over.data?.current?.type === 'container'
-    const activeParticipant = participants.find(p => p.id === activeId)
     
-    if (isOverTable && over.data.current) {
-      const newTableLabel = over.data.current.tableLabel
-      
-      if (newTableLabel === 'unassigned') {
-        setRounds(prev => {
-          const newRounds = [...prev]
-          const roundIdx = newRounds.findIndex(r => r.round === currentRound)
-          const currentAssignments = [...(newRounds[roundIdx].assignments || [])]
-          const activeIdx = currentAssignments.findIndex(a => a.participant_id === activeId)
-          if (activeIdx !== -1) {
-            currentAssignments.splice(activeIdx, 1)
-          }
-          newRounds[roundIdx] = { ...newRounds[roundIdx], assignments: currentAssignments }
-          return newRounds
-        })
-      } else {
-        const currentRoundData = rounds.find(r => r.round === currentRound)
-        const tableLang = currentRoundData?.tableLanguages?.[newTableLabel]
-        
-        if (tableLang && activeParticipant && tableLang !== activeParticipant.language) {
-          toast.error(`언어가 다릅니다: ${activeParticipant.language} 참가자는 ${tableLang} 테이블에 앉을 수 없습니다.`, {
-            id: 'lang-mismatch'
-          })
-          return
-        }
-
-        setRounds(prev => {
-          const newRounds = [...prev]
-          const roundIdx = newRounds.findIndex(r => r.round === currentRound)
-          const currentAssignments = [...(newRounds[roundIdx].assignments || [])]
-          const activeIdx = currentAssignments.findIndex(a => a.participant_id === activeId)
-          
-          if (activeIdx !== -1) {
-            currentAssignments[activeIdx] = { ...currentAssignments[activeIdx], table_label: newTableLabel }
-          } else {
-            currentAssignments.push({ participant_id: activeId, table_label: newTableLabel })
-          }
-          newRounds[roundIdx] = { ...newRounds[roundIdx], assignments: currentAssignments }
-          return newRounds
-        })
+    const activeId = active.id as string
+    const overId = over?.id as string | undefined
+    
+    // 드래그 대상 정보를 ref에 저장 (setState 없이)
+    if (over) {
+      const isOverTable = over.data?.current?.type === 'container'
+      pendingDropRef.current = {
+        activeId,
+        overId: overId || null,
+        isOverTable,
+        tableLabel: isOverTable ? over.data.current?.tableLabel : undefined
       }
-    } else {
-      setRounds(prev => {
-        const newRounds = [...prev]
-        const roundIdx = newRounds.findIndex(r => r.round === currentRound)
-        const currentAssignments = [...(newRounds[roundIdx].assignments || [])]
-        const activeIdx = currentAssignments.findIndex(a => a.participant_id === activeId)
-        const overParticipantIdx = currentAssignments.findIndex(a => a.participant_id === overId)
-        
-        if (overParticipantIdx !== -1) {
-          const newTableLabel = currentAssignments[overParticipantIdx].table_label
-          const currentRoundData = newRounds[roundIdx]
-          const tableLang = currentRoundData.tableLanguages?.[newTableLabel]
-          if (tableLang && activeParticipant && tableLang !== activeParticipant.language) {
-            toast.error(`언어가 다릅니다: ${activeParticipant.language} 참가자는 ${tableLang} 테이블에 앉을 수 없습니다.`, {
-              id: 'lang-mismatch'
-            })
-            return prev
-          }
-
-          if (activeIdx !== -1) {
-            currentAssignments[activeIdx] = { ...currentAssignments[activeIdx], table_label: newTableLabel }
-          } else {
-            currentAssignments.push({ participant_id: activeId, table_label: newTableLabel })
-          }
-        } else {
-          const isOverUnassigned = participants.find(p => p.id === overId && !currentAssignments.some(a => a.participant_id === p.id))
-          if (isOverUnassigned && activeIdx !== -1) {
-            currentAssignments.splice(activeIdx, 1)
-          }
-        }
-        newRounds[roundIdx] = { ...newRounds[roundIdx], assignments: currentAssignments }
-        return newRounds
-      })
     }
   }
 
   const onDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    
+    if (over && active) {
+      const activeId = active.id as string
+      const overId = over.id as string
+      const isOverTable = over.data?.current?.type === 'container'
+      const activeParticipant = participants.find(p => p.id === activeId)
+      
+      if (isOverTable && over.data.current) {
+        const newTableLabel = over.data.current.tableLabel
+        
+        if (newTableLabel === 'unassigned') {
+          // 미배정으로 이동
+          setRounds(prev => {
+            const newRounds = [...prev]
+            const roundIdx = newRounds.findIndex(r => r.round === currentRound)
+            const currentAssignments = [...(newRounds[roundIdx].assignments || [])]
+            const activeIdx = currentAssignments.findIndex(a => a.participant_id === activeId)
+            if (activeIdx !== -1) {
+              currentAssignments.splice(activeIdx, 1)
+            }
+            newRounds[roundIdx] = { ...newRounds[roundIdx], assignments: currentAssignments }
+            return newRounds
+          })
+        } else {
+          // 언어 체크
+          const currentRoundData = rounds.find(r => r.round === currentRound)
+          const tableLang = currentRoundData?.tableLanguages?.[newTableLabel]
+          
+          if (tableLang && activeParticipant && tableLang !== activeParticipant.language) {
+            toast.error(`언어가 다릅니다: ${activeParticipant.language} 참가자는 ${tableLang} 테이블에 앉을 수 없습니다.`, {
+              id: 'lang-mismatch'
+            })
+          } else {
+            // 테이블 이동
+            setRounds(prev => {
+              const newRounds = [...prev]
+              const roundIdx = newRounds.findIndex(r => r.round === currentRound)
+              const currentAssignments = [...(newRounds[roundIdx].assignments || [])]
+              const activeIdx = currentAssignments.findIndex(a => a.participant_id === activeId)
+              
+              if (activeIdx !== -1) {
+                currentAssignments[activeIdx] = { ...currentAssignments[activeIdx], table_label: newTableLabel }
+              } else {
+                currentAssignments.push({ participant_id: activeId, table_label: newTableLabel })
+              }
+              newRounds[roundIdx] = { ...newRounds[roundIdx], assignments: currentAssignments }
+              return newRounds
+            })
+          }
+        }
+      } else {
+        // 다른 참가자 위에 드롭
+        const currentRoundData = rounds.find(r => r.round === currentRound)
+        const activeAssignment = currentRoundData?.assignments.find(a => a.participant_id === activeId)
+        const overAssignment = currentRoundData?.assignments.find(a => a.participant_id === overId)
+        
+        if (overAssignment && overAssignment.table_label !== activeAssignment?.table_label) {
+          const newTableLabel = overAssignment.table_label
+          const tableLang = currentRoundData?.tableLanguages?.[newTableLabel]
+          
+          if (tableLang && activeParticipant && tableLang !== activeParticipant.language) {
+            toast.error(`언어가 다릅니다: ${activeParticipant.language} 참가자는 ${tableLang} 테이블에 앉을 수 없습니다.`, {
+              id: 'lang-mismatch'
+            })
+          } else {
+            setRounds(prev => {
+              const newRounds = [...prev]
+              const roundIdx = newRounds.findIndex(r => r.round === currentRound)
+              const currentAssignments = [...(newRounds[roundIdx].assignments || [])]
+              const activeIdx = currentAssignments.findIndex(a => a.participant_id === activeId)
+              
+              if (activeIdx !== -1) {
+                currentAssignments[activeIdx] = { ...currentAssignments[activeIdx], table_label: newTableLabel }
+              } else {
+                currentAssignments.push({ participant_id: activeId, table_label: newTableLabel })
+              }
+              newRounds[roundIdx] = { ...newRounds[roundIdx], assignments: currentAssignments }
+              return newRounds
+            })
+          }
+        } else if (!overAssignment) {
+          // 미배정 참가자 위에 드롭 (미배정으로 이동)
+          if (activeAssignment) {
+            setRounds(prev => {
+              const newRounds = [...prev]
+              const roundIdx = newRounds.findIndex(r => r.round === currentRound)
+              const currentAssignments = [...(newRounds[roundIdx].assignments || [])]
+              const activeIdx = currentAssignments.findIndex(a => a.participant_id === activeId)
+              if (activeIdx !== -1) {
+                currentAssignments.splice(activeIdx, 1)
+              }
+              newRounds[roundIdx] = { ...newRounds[roundIdx], assignments: currentAssignments }
+              return newRounds
+            })
+          }
+        }
+      }
+    }
+    
     setActiveId(null)
+    pendingDropRef.current = { activeId: null, overId: null, isOverTable: false }
   }
 
   const currentRoundData = rounds.find(r => r.round === currentRound)
