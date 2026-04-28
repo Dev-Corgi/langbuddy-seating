@@ -98,24 +98,68 @@ export function arrangeRound(
 
     totalTableIdx += langTableCount
 
+    // 국적 균형 배치: round-robin 방식
+    const foreigners = members.filter(m => m.nationality === '외국인')
+    const koreans = members.filter(m => m.nationality === '한국인')
+    
+    // 테이블별 멤버 슬롯 생성
+    const tableMemberSlots: Record<string, string[]> = {}
+    langTableLabels.forEach(label => {
+      tableMemberSlots[label] = []
+    })
+    
+    // 1단계: 외국인 round-robin 배치 (각 테이블에 1명씩 먼저 채우기)
+    let tableIdx = 0
+    const shuffledForeigners = _.shuffle([...foreigners])
+    shuffledForeigners.forEach(foreigner => {
+      const label = langTableLabels[tableIdx % langTableCount]
+      tableMemberSlots[label].push(foreigner.id)
+      tableIdx++
+    })
+    
+    // 2단계: 한국인 round-robin 배치
+    const shuffledKoreans = _.shuffle([...koreans])
+    // 한국인도 외국인과 마찬가지로 round-robin, 이미 외국인이 있는 테이블부터 채우기
+    // 외국인 수가 적은 테이블부터 채우는 것이 균형에 도움
+    const sortedLabels = langTableLabels.slice().sort((a, b) => 
+      tableMemberSlots[a].length - tableMemberSlots[b].length
+    )
+    
+    let koreanIdx = 0
+    while (koreanIdx < shuffledKoreans.length) {
+      for (const label of sortedLabels) {
+        if (koreanIdx >= shuffledKoreans.length) break
+        const capacity = capacities[langTableLabels.indexOf(label)]
+        if (tableMemberSlots[label].length < capacity) {
+          tableMemberSlots[label].push(shuffledKoreans[koreanIdx].id)
+          koreanIdx++
+        }
+      }
+    }
+    
+    // 3단계: 중복 만남 최소화를 위해 200번 셔플 시도
     let bestAssignments: Assignment[] = []
     let minPenalty = Infinity
-
+    
+    // 각 테이블 내부 멤버 순서만 셔플하면서 국적 균형은 유지
     for (let attempt = 0; attempt < 200; attempt++) {
       const currentAssignments: Assignment[] = []
-      const shuffledMembers = _.shuffle([...members])
-      let memberIdx = 0
-
-      capacities.forEach((cap, idx) => {
-        const label = langTableLabels[idx]
-        for (let k = 0; k < cap && memberIdx < shuffledMembers.length; k++) {
-          const p = shuffledMembers[memberIdx]
-          currentAssignments.push({
-            participant_id: p.id,
-            table_label: label,
-          })
-          memberIdx += 1
-        }
+      
+      langTableLabels.forEach(label => {
+        const capacity = capacities[langTableLabels.indexOf(label)]
+        const slotMembers = tableMemberSlots[label]
+        
+        // 테이블 내부 멤버 순서만 셔플
+        const shuffledSlot = attempt === 0 ? slotMembers : _.shuffle(slotMembers)
+        
+        shuffledSlot.forEach((memberId, idx) => {
+          if (idx < capacity) {
+            currentAssignments.push({
+              participant_id: memberId,
+              table_label: label,
+            })
+          }
+        })
       })
 
       let penalty = 0

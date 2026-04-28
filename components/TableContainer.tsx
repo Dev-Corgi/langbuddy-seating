@@ -34,7 +34,24 @@ export function TableContainer({ label, participants, round, tableLanguage, onEd
           <div className="flex items-center gap-2">
             <CardTitle className="text-lg font-black">{label} Table</CardTitle>
             {tableLanguage && (
-              <span className="text-[10px] font-black text-primary uppercase bg-primary/10 px-2 py-1 rounded">
+              <span className="text-[10px] font-black text-primary uppercase bg-primary/10 px-2 py-1 rounded flex items-center gap-1">
+                {tableLanguage === '영어' ? (
+                  <svg className="w-3 h-3" viewBox="0 0 20 14" fill="none">
+                    <rect width="20" height="14" fill="#B22234"/>
+                    <rect y="1.08" width="20" height="1.08" fill="white"/>
+                    <rect y="3.23" width="20" height="1.08" fill="white"/>
+                    <rect y="5.38" width="20" height="1.08" fill="white"/>
+                    <rect y="7.54" width="20" height="1.08" fill="white"/>
+                    <rect y="9.69" width="20" height="1.08" fill="white"/>
+                    <rect y="11.85" width="20" height="1.08" fill="white"/>
+                    <rect width="8" height="7.54" fill="#3C3B6E"/>
+                  </svg>
+                ) : tableLanguage === '일본어' ? (
+                  <svg className="w-3 h-3" viewBox="0 0 20 14" fill="none">
+                    <rect width="20" height="14" fill="white"/>
+                    <circle cx="10" cy="7" r="3.5" fill="#BC002D"/>
+                  </svg>
+                ) : null}
                 {tableLanguage}
               </span>
             )}

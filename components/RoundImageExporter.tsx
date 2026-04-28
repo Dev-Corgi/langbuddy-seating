@@ -80,7 +80,24 @@ export function RoundImageExporter({ round, roundData, participants }: RoundImag
                       <div className="flex items-center gap-2">
                         <CardTitle className="text-lg font-black">{label} Table</CardTitle>
                         {tableLanguage && (
-                          <span className="text-[10px] font-black text-primary uppercase bg-primary/10 px-2 py-1 rounded">
+                          <span className="text-[10px] font-black text-primary uppercase bg-primary/10 px-2 py-1 rounded flex items-center gap-1">
+                            {tableLanguage === '영어' ? (
+                              <svg className="w-3 h-3" viewBox="0 0 20 14" fill="none">
+                                <rect width="20" height="14" fill="#B22234"/>
+                                <rect y="1.08" width="20" height="1.08" fill="white"/>
+                                <rect y="3.23" width="20" height="1.08" fill="white"/>
+                                <rect y="5.38" width="20" height="1.08" fill="white"/>
+                                <rect y="7.54" width="20" height="1.08" fill="white"/>
+                                <rect y="9.69" width="20" height="1.08" fill="white"/>
+                                <rect y="11.85" width="20" height="1.08" fill="white"/>
+                                <rect width="8" height="7.54" fill="#3C3B6E"/>
+                              </svg>
+                            ) : tableLanguage === '일본어' ? (
+                              <svg className="w-3 h-3" viewBox="0 0 20 14" fill="none">
+                                <rect width="20" height="14" fill="white"/>
+                                <circle cx="10" cy="7" r="3.5" fill="#BC002D"/>
+                              </svg>
+                            ) : null}
                             {tableLanguage}
                           </span>
                         )}
@@ -90,29 +107,64 @@ export function RoundImageExporter({ round, roundData, participants }: RoundImag
                   </CardHeader>
                   <CardContent className="p-3">
                     <div className="grid grid-cols-2 gap-2">
-                      {tableParticipants.map(p => (
-                        <div
-                          key={p.id}
-                          className="flex flex-col p-2 rounded-lg border bg-white shadow-sm"
-                        >
-                          <p className="font-bold text-sm truncate mb-1">{p.name}</p>
-                          <div className="flex gap-1">
-                            <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${
-                              p.nationality === '외국인' ? 'bg-blue-100 text-blue-600' : 'bg-emerald-100 text-emerald-600'
-                            }`}>
-                              {p.nationality}
-                            </span>
-                            <span className={`text-[9px] font-black px-1.5 py-0.5 rounded uppercase ${
-                              p.gender === '여' ? 'bg-pink-100 text-pink-600' : 'bg-slate-100 text-slate-600'
-                            }`}>
-                              {p.gender}
-                            </span>
-                            <span className="text-[9px] font-black px-1.5 py-0.5 rounded uppercase bg-primary/10 text-primary">
-                              {p.language}
-                            </span>
+                      {tableParticipants.map(p => {
+                        const isForeigner = p.nationality === '외국인'
+                        const isFemale = p.gender === '여'
+                        return (
+                          <div
+                            key={p.id}
+                            className={`flex flex-col p-2 rounded-lg border shadow-sm overflow-hidden relative ${
+                              isForeigner ? 'bg-blue-50/40' : 'bg-emerald-50/40'
+                            }`}
+                          >
+                            {/* 국적 구분 좌측 컬러바 */}
+                            <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${
+                              isForeigner ? 'bg-blue-500' : 'bg-emerald-500'
+                            }`} />
+                            <div className="pl-2">
+                              <p className="font-bold text-sm truncate mb-1">{p.name}</p>
+                              <div className="flex gap-1">
+                                <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${
+                                  isForeigner ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'
+                                }`}>
+                                  {p.nationality}
+                                </span>
+                                <span className={`text-[9px] font-black px-1.5 py-0.5 rounded uppercase ${
+                                  isFemale ? 'bg-pink-100 text-pink-600' : 'bg-sky-100 text-sky-700'
+                                }`}>
+                                  {p.gender}
+                                </span>
+                                <span className="text-[9px] font-black px-1.5 py-0.5 rounded uppercase bg-primary/10 text-primary flex items-center gap-0.5">
+                                  {p.language === '영어' ? (
+                                    <svg className="w-3 h-3" viewBox="0 0 20 14" fill="none">
+                                      <rect width="20" height="14" fill="#B22234"/>
+                                      <rect y="1.08" width="20" height="1.08" fill="white"/>
+                                      <rect y="3.23" width="20" height="1.08" fill="white"/>
+                                      <rect y="5.38" width="20" height="1.08" fill="white"/>
+                                      <rect y="7.54" width="20" height="1.08" fill="white"/>
+                                      <rect y="9.69" width="20" height="1.08" fill="white"/>
+                                      <rect y="11.85" width="20" height="1.08" fill="white"/>
+                                      <rect width="8" height="7.54" fill="#3C3B6E"/>
+                                    </svg>
+                                  ) : p.language === '일본어' ? (
+                                    <svg className="w-3 h-3" viewBox="0 0 20 14" fill="none">
+                                      <rect width="20" height="14" fill="white"/>
+                                      <circle cx="10" cy="7" r="3.5" fill="#BC002D"/>
+                                    </svg>
+                                  ) : (
+                                    <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                      <circle cx="12" cy="12" r="10"/>
+                                      <path d="M2 12h20"/>
+                                      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+                                    </svg>
+                                  )}
+                                  {p.language}
+                                </span>
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   </CardContent>
                 </Card>
