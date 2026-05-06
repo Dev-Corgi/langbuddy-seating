@@ -107,13 +107,17 @@ export function ParticipantCard({ participant, isOverlay = false, onEdit }: Part
         <Button
           variant="ghost"
           size="icon"
-          className="h-6 w-6 rounded-md opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-1"
+          className="h-7 w-7 rounded-md opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-1 relative z-50 pointer-events-auto"
           onClick={(e) => {
             e.stopPropagation()
+            e.preventDefault()
             onEdit(participant)
           }}
+          onPointerDown={(e) => {
+            e.stopPropagation()
+          }}
         >
-          <Settings className="w-3.5 h-3.5 text-muted-foreground" />
+          <Settings className="w-4 h-4 text-muted-foreground" />
         </Button>
       )}
     </div>
